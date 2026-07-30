@@ -4,72 +4,63 @@ Ledger write-back policy engine.
 Decision: NOT an auto-repair path.
   - Relative CRC flags self_consistent_wrong_vs_ledger
   - Write-back is a *policy action* with an explicit key
-  - Default = refuse
-
-This module is the product boundary so agents cannot "helpfully" overwrite SoT.
+  - Default: refuse
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-import numpy as np
-
-POLICY_ALLOW = "FOUNDER_POLICY_ALLOW_WRITEBACK"
 
 
 @dataclass
-class WriteBackRequest:
-    entity_ids: list[str]
-    reason: str
-    requested_by: str = "agent"
-
-
-@dataclass
-class WriteBackResult:
+class WriteBackDecision:
     allowed: bool
-    applied: bool
-    detail: str
-    entities_touched: list[str]
+    reason: str
+    actions: list[dict[str, Any]]
 
 
-def evaluate_writeback(
-    relative_status: str | None,
-    request: WriteBackRequest,
-    policy_key: str | None,
-) -> WriteBackResult:
-    if relative_status != "self_consistent_wrong_vs_ledger":
-        return WriteBackResult(
+def evaluate_write_back(
+    crc_report: dict[str, Any],
+    *,
+    policy_key: str | None = None,
+    allow_realign: bool = False,
+    allow_drop: bool = False,
+) -> WriteBackDecision:
+    """Refuse by default. Require explicit policy_key and flags."""
+    if not policy_key:
+        return WriteBackDecision(
             allowed=False,
-            applied=False,
-            detail=f"write-back only valid for self_consistent_wrong_vs_ledger (got {relative_status})",
-            entities_touched=[],
+            reason="missing policy_key — write-back refused",
+            actions=[],
         )
-    if policy_key != POLICY_ALLOW:
-        return WriteBackResult(
+    if policy_key != "FOUNDER_WRITEBACK_YES":
+        return WriteBackDecision(
             allowed=False,
-            applied=False,
-            detail="refused: missing FOUNDER_POLICY_ALLOW_WRITEBACK — human/policy gate required",
-            entities_touched=[],
+            reason="invalid policy_key",
+            actions=[],
         )
-    return WriteBackResult(
-        allowed=True,
-        applied=False,  # caller must still execute; this only authorizes
-        detail=f"authorized for {len(request.entity_ids)} entities: {request.reason}",
-        entities_touched=list(request.entity_ids),
+    relative = (crc_report.get("relative") or {})
+    status = relative.get("status") if isinstance(relative, dict) else relative
+    actions: list[dict[str, Any]] = []
+    if status == "self_consistent_wrong_vs_ledger":
+        if allow_realign:
+            actions.append({"type": "realign_to_sot", "scope": "flagged_entities"})
+        if allow_drop:
+            actions.append({"type": "drop_non_sot_edges", "scope": "flagged_entities"})
+        if not actions:
+            return WriteBackDecision(
+                allowed=False,
+                reason="relative fraud detected but no allow_realign/allow_drop flags",
+                actions=[],
+            )
+        return WriteBackDecision(
+            allowed=True,
+            reason="policy_key valid; relative fraud with explicit allow flags",
+            actions=actions,
+        )
+    return WriteBackDecision(
+        allowed=False,
+        reason=f"no write-back path for status={status}",
+        actions=[],
     )
-
-
-def apply_authorized_writeback(
-    feats: dict[str, np.ndarray],
-    reference: dict[str, np.ndarray],
-    entity_node_ids: list[str],
-    authorization: WriteBackResult,
-) -> dict[str, np.ndarray]:
-    if not authorization.allowed:
-        raise PermissionError(authorization.detail)
-    out = {k: v.copy() for k, v in feats.items()}
-    for nid in entity_node_ids:
-        if nid in reference and nid in out:
-            out[nid] = reference[nid].copy()
-    return out
