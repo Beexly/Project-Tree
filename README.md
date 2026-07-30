@@ -1,24 +1,40 @@
 # Project-Tree
 
-Container for standalone IP wedges and project trees.
+Standalone home for the **CRC knowledge-integrity wedge** (`sheaf_integrity/`).
 
-## sheaf_integrity/ — CRC Knowledge-Integrity API
+Not part of Beexly/Sports until an explicit founder YES.
 
-Classical multi-source consistency engine (Certified Repair Class).
-
-**Start here:** [`sheaf_integrity/AGENT_HANDOFF.md`](sheaf_integrity/AGENT_HANDOFF.md)
+## Quick start
 
 ```bash
-cd sheaf_integrity
+git clone https://github.com/Beexly/Project-Tree.git
+cd Project-Tree/sheaf_integrity
+pip install numpy fastapi uvicorn
 python demo.py
-python demo.py --serve
+python demo.py --serve   # :8080
 ```
 
-Standalone IP — not merged into Beexly/Sports without explicit YES.
+## What this is
 
-### What's included
-- Agent handoff, status, decisions, IP wedge
-- OpenAPI contract + demo entrypoint
-- Schema-real KYC-style fixtures
-- Core library (CRC, holonomy, repair loop, product modes) — uploading
-- Research notes (CRC-S abelian, parks, surgery vs FES)
+Classical multi-source consistency engine.
+
+Repair classes: `consistent` | `statistical` | `structural` | `self_consistent_wrong_vs_ledger`
+
+See `sheaf_integrity/AGENT_HANDOFF.md` and `sheaf_integrity/WHAT_THIS_IS.md`.
+
+## Layout
+
+```
+sheaf_integrity/
+  core/          CRC engine
+  server/        FastAPI
+  demo.py
+  tests/
+  benchmarks/
+  docs/
+  research/
+```
+
+## Status
+
+Path A technically complete in sandbox. Repo is the durable home. Some core modules may still be landing on `main` — check `sheaf_integrity/core/`.
