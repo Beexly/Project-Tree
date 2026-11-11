@@ -19,19 +19,24 @@ def rows_to_graph(
     nodes: list[str] = []
     feats: dict[str, np.ndarray] = {}
     by_entity: dict[str, list[str]] = {}
+    sot_feats: dict[str, np.ndarray] = {}  # entity_id -> SoT feature vector (reference only)
     for sys_name, rows in tables.items():
         for row in rows:
             eid = row.get("entity_id") or row.get("id")
             if not eid:
                 continue
-            nid = f"{sys_name}:{eid}"
-            nodes.append(nid)
             vec = []
             for c in feature_cols:
                 try:
                     vec.append(float(row.get(c, 0) or 0))
                 except ValueError:
                     vec.append(0.0)
+            if sot_system and sys_name == sot_system:
+                # SoT is the ledger: it supplies the reference, it is NOT a graph node.
+                sot_feats[eid] = np.array(vec, dtype=float)
+                continue
+            nid = f"{sys_name}:{eid}"
+            nodes.append(nid)
             feats[nid] = np.array(vec, dtype=float)
             by_entity.setdefault(eid, []).append(nid)
     maps: list[EdgeMap] = []
@@ -41,15 +46,12 @@ def rows_to_graph(
                 maps.append(EdgeMap(a, b, "same_person", 0.0))
     reference = None
     if sot_system:
-        reference = {n: feats[n].copy() for n in nodes if n.startswith(sot_system + ":")}
-        # expand: for every entity, SoT node features as ref for all systems
         ref_full = {}
         for eid, nids in by_entity.items():
-            sot_nid = f"{sot_system}:{eid}"
-            if sot_nid in feats:
+            if eid in sot_feats:
                 for n in nids:
-                    ref_full[n] = feats[sot_nid].copy()
-        reference = ref_full if ref_full else reference
+                    ref_full[n] = sot_feats[eid].copy()
+        reference = ref_full or None
     return nodes, maps, feats, reference
 
 def run_crc_on_tables(
@@ -68,7 +70,7 @@ def run_crc_on_tables(
         if ":" in n:
             entities.add(n.split(":", 1)[1])
     for eid in entities:
-        enodes = [n for n in nodes if n.endswith(":" + eid) or n.split(":")[-1] == eid]
+        enodes = [n for n in nodes if n.split(":", 1)[1] == eid]
         emaps = [m for m in maps if m.source in enodes and m.target in enodes]
         efeats = {n: feats[n] for n in enodes if n in feats}
         eref = {n: reference[n] for n in enodes if reference and n in reference} or None
