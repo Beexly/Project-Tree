@@ -52,10 +52,36 @@ def test_report_shape():
         assert k in d
 
 
+def test_sot_system_reference_flags_e001():
+    from ingest_multisource import load_csv
+    from product_modes import entity_integrity_report
+    bench = Path(__file__).resolve().parents[1] / "benchmarks" / "public_schema_extract"
+    tables = {p.stem: load_csv(p) for p in sorted(bench.glob("*.csv"))}
+    out = entity_integrity_report(tables, sot_system="risk_sot")
+    assert out["summary"]["n_fraud_flagged"] == 1
+    assert out["fraud_candidates"][0]["entity_id"] == "E001"
+    assert out["fraud_candidates"][0]["relative"] == "self_consistent_wrong_vs_ledger"
+
+
+import unittest
+
+
+class TestCRCFull(unittest.TestCase):
+    def test_all(self):
+        test_penrose_structural()
+        test_penrose_flat_when_angles_sum_zero()
+        test_relative_fraud_label()
+        test_consistent_identity()
+        test_report_shape()
+        test_sot_system_reference_flags_e001()
+
+
 if __name__ == "__main__":
     test_penrose_structural()
     test_penrose_flat_when_angles_sum_zero()
     test_relative_fraud_label()
     test_consistent_identity()
     test_report_shape()
+    test_sot_system_reference_flags_e001()
     print("OK test_crc_full")
+
