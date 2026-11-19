@@ -5,12 +5,17 @@ Run: uvicorn server.app:app --host 0.0.0.0 --port 8080
 
 from __future__ import annotations
 
+import json
+import os
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +28,58 @@ app = FastAPI(
     version="0.2.0",
     description="CRC consistency + proposals. No Riemannian jargon on the wire.",
 )
+
+
+def _allowed_api_keys() -> set[str]:
+    raw = os.environ.get("CRC_API_KEYS", "")
+    return {k.strip() for k in raw.split(",") if k.strip()}
+
+
+def _usage_log_path() -> Path:
+    return Path(os.environ.get("CRC_USAGE_LOG", "/tmp/crc_usage.jsonl"))
+
+
+def _append_usage_log(entry: dict[str, Any]) -> None:
+    log_path = _usage_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+@app.middleware("http")
+async def api_key_and_metering_middleware(request: Request, call_next):
+    t0 = time.perf_counter()
+    path = request.url.path
+    keys = _allowed_api_keys()
+    provided_key = request.headers.get("X-API-Key", "")
+
+    if keys and path != "/health":
+        if not provided_key or provided_key not in keys:
+            resp = JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing X-API-Key"},
+            )
+            _append_usage_log({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "method": request.method,
+                "path": path,
+                "status_code": 401,
+                "authorized": False,
+                "duration_ms": round((time.perf_counter() - t0) * 1000.0, 3),
+            })
+            return resp
+
+    response = await call_next(request)
+    _append_usage_log({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "method": request.method,
+        "path": path,
+        "status_code": response.status_code,
+        "authorized": True,
+        "key_prefix": provided_key[:6] if provided_key else None,
+        "duration_ms": round((time.perf_counter() - t0) * 1000.0, 3),
+    })
+    return response
 
 
 class NodeIn(BaseModel):
